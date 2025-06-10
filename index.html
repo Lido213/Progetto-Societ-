@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PoliStanze Lecco - Trova la tua stanza</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -11,20 +13,25 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Firebase Libraries -->
-    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-storage.js"></script>
-
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
         .hero-bg { background-color: #1e3a8a; background-image: linear-gradient(145deg, #1e3a8a 0%, #3b82f6 100%); }
         .nav-link.active { color: #2563eb; font-weight: 600; }
-        [id^="view-"] { display: none; }
-        [id^="view-"].active { display: block; }
-        .form-step { display: none; }
-        .form-step.active { display: block; }
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: opacity 300ms, transform 300ms; }
+        .modal-exit { opacity: 1; transform: scale(1); }
+        .modal-exit-active { opacity: 0; transform: scale(0.95); transition: opacity 300ms, transform 300ms; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .spinner { border-top-color: #3b82f6; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Nascondi le frecce per input numerici */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] { -moz-appearance: textfield; }
     </style>
 </head>
 <body class="bg-stone-50 text-stone-800">
@@ -33,275 +40,539 @@
         <nav class="container mx-auto px-4 lg:px-8 flex justify-between items-center py-4">
             <div class="text-2xl font-bold text-blue-800">Poli<span class="text-blue-500">Stanze</span></div>
             <div class="hidden md:flex items-center space-x-6" id="nav-links">
-                <a href="#search" class="nav-link active">Cerca</a>
-                <a href="#create-listing" class="nav-link">Pubblica Annuncio</a>
-                <a href="#profile" class="nav-link">Profilo</a>
-                <a href="#my-home" class="nav-link">Casa Mia</a>
+                <a href="#search" class="nav-link text-stone-600 hover:text-blue-600 transition duration-200 active">Cerca</a>
+                <a href="#dashboard" class="nav-link text-stone-600 hover:text-blue-600 transition duration-200">Dashboard</a>
+                <a href="#profile" id="profile-link" class="nav-link text-stone-600 hover:text-blue-600 transition duration-200 hidden">Profilo</a>
             </div>
-            <div>
-                <button id="login-btn" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 transition">Accedi</button>
+            <div id="auth-section" class="flex items-center space-x-2">
+                 <button id="add-listing-btn" class="hidden bg-green-500 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-600 transition duration-200">Aggiungi Annuncio</button>
+                 <button id="auth-btn" class="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-200">Accedi</button>
             </div>
         </nav>
     </header>
 
     <main class="container mx-auto px-4 lg:px-8 py-8 md:py-12">
 
-        <div id="view-search" class="active">
+        <div id="view-search">
             <section class="text-center rounded-xl hero-bg text-white py-20 px-6 mb-12 shadow-xl">
                  <h1 class="text-4xl md:text-5xl font-bold mb-4">Trova la tua stanza a Lecco</h1>
-                 <p class="text-lg md:text-xl max-w-3xl mx-auto mb-8 text-blue-100">La piattaforma esclusiva per gli studenti del Politecnico.</p>
+                 <p class="text-lg md:text-xl max-w-3xl mx-auto mb-8 text-blue-100">La piattaforma esclusiva per gli studenti del Politecnico. Semplice, sicura ed efficiente.</p>
             </section>
-            <div class="bg-white p-6 rounded-xl shadow-md mb-6">
-                <h2 class="text-3xl font-bold text-stone-800 mb-2">Esplora gli alloggi</h2>
-                <p class="text-stone-600">Utilizza i filtri per trovare la soluzione perfetta per te.</p>
-            </div>
-            <div id="grid-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- Annunci caricati da JS -->
-            </div>
-        </div>
-        
-        <div id="view-create-listing">
-            <div class="bg-white p-6 md:p-8 rounded-xl shadow-md mb-6 max-w-3xl mx-auto">
-                <h2 class="text-3xl font-bold text-stone-800 mb-2">Crea un nuovo annuncio</h2>
-                <p class="text-stone-600 mb-6">Segui i passaggi per pubblicare il tuo alloggio sulla nostra piattaforma.</p>
-                
-                <form id="create-listing-form">
-                    <!-- Step 1: Info Base -->
-                    <div class="form-step active" id="step1">
-                        <h3 class="text-xl font-semibold mb-4 border-b pb-2">1. Informazioni di base</h3>
-                        <div class="mb-4">
-                            <label for="ad-title" class="block text-sm font-medium text-gray-700 mb-1">Titolo dell'annuncio</label>
-                            <input type="text" id="ad-title" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Es. Stanza singola luminosa vicino al campus">
+            
+            <section id="search-section" class="mb-12">
+                <div class="bg-white p-6 rounded-xl shadow-md mb-6">
+                    <h2 class="text-3xl font-bold text-stone-800 mb-2">Esplora gli alloggi</h2>
+                    <p class="text-stone-600">Utilizza i filtri per trovare la soluzione perfetta per te.</p>
+                </div>
+                <div class="flex flex-col md:flex-row gap-8">
+                    <aside class="w-full md:w-1/4 lg:w-1/5 bg-white p-6 rounded-xl shadow-lg self-start">
+                        <h3 class="text-xl font-bold mb-6 border-b pb-3">Filtri</h3>
+                        <div class="mb-6">
+                            <label for="price" class="block text-md font-semibold mb-2 text-stone-700">Prezzo (€/mese)</label>
+                            <input type="range" id="price" min="200" max="1000" value="1000" class="w-full accent-blue-600">
+                            <div class="flex justify-between text-sm text-stone-500 mt-1"><span>200</span><span id="price-value">1000+</span></div>
                         </div>
-                        <div class="mb-4">
-                            <label for="ad-description" class="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
-                            <textarea id="ad-description" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Descrivi l'alloggio, le sue caratteristiche e le regole della casa..."></textarea>
-                        </div>
-                        <div class="flex justify-end">
-                            <button type="button" class="next-step-btn bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-blue-700">Avanti</button>
-                        </div>
-                    </div>
-
-                    <!-- Step 2: Dettagli e Prezzo -->
-                    <div class="form-step" id="step2">
-                         <h3 class="text-xl font-semibold mb-4 border-b pb-2">2. Dettagli e Prezzo</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label for="ad-type" class="block text-sm font-medium text-gray-700 mb-1">Tipologia</label>
-                                <select id="ad-type" class="w-full px-3 py-2 border border-gray-300 rounded-md">
-                                    <option>Stanza Singola</option>
-                                    <option>Stanza Doppia</option>
-                                    <option>Monolocale</option>
-                                    <option>Appartamento</option>
-                                </select>
-                            </div>
-                             <div>
-                                <label for="ad-price" class="block text-sm font-medium text-gray-700 mb-1">Prezzo mensile (€)</label>
-                                <input type="number" id="ad-price" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="450">
+                        <div class="mb-6">
+                            <h4 class="text-md font-semibold mb-3 text-stone-700">Tipologia</h4>
+                            <div class="space-y-2">
+                                <div><input type="checkbox" id="type-single" value="Stanza Singola" class="filter-type accent-blue-600 mr-2 rounded"><label for="type-single">Stanza Singola</label></div>
+                                <div><input type="checkbox" id="type-double" value="Stanza Doppia" class="filter-type accent-blue-600 mr-2 rounded"><label for="type-double">Stanza Doppia</label></div>
+                                <div><input type="checkbox" id="type-mono" value="Monolocale" class="filter-type accent-blue-600 mr-2 rounded"><label for="type-mono">Monolocale</label></div>
+                                <div><input type="checkbox" id="type-app" value="Appartamento" class="filter-type accent-blue-600 mr-2 rounded"><label for="type-app">Appartamento</label></div>
                             </div>
                         </div>
-                        <div class="mb-4">
-                             <label class="block text-sm font-medium text-gray-700 mb-2">Servizi inclusi</label>
-                             <div class="flex flex-wrap gap-4">
-                                <div><input type="checkbox" id="ad-wifi" class="accent-blue-600 mr-2 rounded"><label for="ad-wifi">Wi-Fi</label></div>
-                                <div><input type="checkbox" id="ad-washing" class="accent-blue-600 mr-2 rounded"><label for="ad-washing">Lavatrice</label></div>
-                                <div><input type="checkbox" id="ad-bills" class="accent-blue-600 mr-2 rounded"><label for="ad-bills">Spese Incluse</label></div>
+                    </aside>
+                    <div class="w-full md:w-3/4 lg:w-4/5">
+                        <div class="flex justify-between items-center mb-4">
+                            <div class="text-stone-600 font-medium"><span id="results-count">0</span> annunci trovati</div>
+                        </div>
+                        <div id="grid-view" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 min-h-[400px]">
+                            <div id="loading-spinner" class="col-span-full flex justify-center items-center">
+                                <div class="spinner w-12 h-12 border-4 border-stone-200 rounded-full"></div>
                              </div>
                         </div>
-                        <div class="flex justify-between">
-                            <button type="button" class="prev-step-btn bg-gray-200 text-gray-800 font-semibold px-6 py-2 rounded-lg hover:bg-gray-300">Indietro</button>
-                            <button type="button" class="next-step-btn bg-blue-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-blue-700">Avanti</button>
-                        </div>
                     </div>
-
-                     <!-- Step 3: Foto -->
-                    <div class="form-step" id="step3">
-                        <h3 class="text-xl font-semibold mb-4 border-b pb-2">3. Carica le Foto</h3>
-                        <div class="mb-4 p-6 border-2 border-dashed border-gray-300 rounded-lg text-center">
-                            <label for="ad-photos" class="cursor-pointer text-blue-600 font-semibold">Clicca qui per selezionare le immagini</label>
-                            <input type="file" id="ad-photos" multiple accept="image/*" class="hidden">
-                             <p class="text-xs text-gray-500 mt-2">Puoi caricare più foto. La prima sarà l'immagine di copertina.</p>
-                        </div>
-                        <div id="photo-preview" class="grid grid-cols-3 gap-4"></div>
-                         <div class="flex justify-between mt-6">
-                            <button type="button" class="prev-step-btn bg-gray-200 text-gray-800 font-semibold px-6 py-2 rounded-lg hover:bg-gray-300">Indietro</button>
-                            <button type="submit" class="bg-green-600 text-white font-semibold px-6 py-2 rounded-lg hover:bg-green-700">Pubblica Annuncio</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
+                </div>
+            </section>
         </div>
         
-        <!-- Altre viste (Profilo, Casa Mia, etc.) vanno qui -->
-        <div id="view-profile" ></div>
-        <div id="view-my-home" ></div>
+        <div id="view-dashboard" class="hidden">
+             <section id="dashboard-section" class="mb-12">
+                <div class="bg-white p-6 rounded-xl shadow-md mb-6">
+                    <h2 class="text-3xl font-bold text-stone-800 mb-2">Panoramica del Mercato</h2>
+                    <p class="text-stone-600">Statistiche sulla disponibilità di alloggi sulla nostra piattaforma.</p>
+                </div>
+                <div class="bg-white p-8 rounded-xl shadow-lg">
+                    <div class="chart-container"><canvas id="typeDistributionChart"></canvas></div>
+                </div>
+            </section>
+        </div>
+        
+        <div id="view-profile" class="hidden">
+            <section id="profile-section">
+                <div class="bg-white p-6 rounded-xl shadow-md mb-6">
+                    <h2 class="text-3xl font-bold text-stone-800 mb-2">Il Mio Profilo</h2>
+                    <p class="text-stone-600">Questa è la tua pagina personale. Puoi modificare le tue informazioni qui.</p>
+                </div>
+                <div id="profile-content"></div>
+            </section>
+        </div>
     </main>
+
+    <footer class="bg-stone-800 text-white mt-12">
+        <div class="container mx-auto px-8 py-8 text-center">
+            <p>&copy; 2024 PoliStanze Lecco. Un progetto per gli studenti, dagli studenti.</p>
+        </div>
+    </footer>
+
+    <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center p-4 hidden"></div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // --- Inizializzazione Firebase (da incollare qui la config dal tuo progetto) ---
-    // const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
-    // firebase.initializeApp(firebaseConfig);
-    // const auth = firebase.auth();
-    // const db = firebase.firestore();
-    // const storage = firebase.storage();
-    // --- Fine Inizializzazione ---
-
-    let listingsData = []; // Ora è vuoto, verrà riempito dal "database"
-
-    const navLinksContainer = document.getElementById('nav-links');
-    const views = document.querySelectorAll('[id^="view-"]');
     
-    // --- Navigazione tra le Viste ---
-    navLinksContainer.addEventListener('click', (e) => {
-        if (e.target.tagName === 'A') {
-            e.preventDefault();
-            const viewName = e.target.getAttribute('href').substring(1);
-            
-            views.forEach(view => view.classList.remove('active'));
-            document.getElementById(`view-${viewName}`).classList.add('active');
-
-            navLinksContainer.querySelectorAll('a').forEach(link => link.classList.remove('active'));
-            e.target.classList.add('active');
-        }
-    });
-
-    // --- Logica del Form di Creazione Annuncio ---
-    const createListingForm = document.getElementById('create-listing-form');
-    const steps = document.querySelectorAll('.form-step');
-    let currentStep = 0;
-
-    function showStep(stepIndex) {
-        steps.forEach((step, index) => {
-            step.classList.toggle('active', index === stepIndex);
-        });
+    // --- CONFIGURAZIONE SUPABASE ---
+    // Sostituisci con i tuoi dati presi dalla dashboard di Supabase
+    const SUPABASE_URL = https://laksvyhcbyrwiscgmotk.supabase.co; 
+    const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxha3N2eWhjYnlyd2lzY2dtb3RrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk1NjYwNTAsImV4cCI6MjA2NTE0MjA1MH0.JZ8eT-IXb2o7SeJQYl_N9UqezY0PRqLvyjpEoScA2rk;
+    
+    // Controlla se le chiavi sono state inserite
+    if (SUPABASE_URL === 'IL_TUO_URL_SUPABASE' || SUPABASE_ANON_KEY === 'LA_TUA_CHIAVE_ANON_SUPABASE') {
+        const mainContent = document.querySelector('main');
+        mainContent.innerHTML = `
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-6 rounded-xl shadow-md my-10">
+                <h2 class="text-2xl font-bold">Configurazione Mancante</h2>
+                <p class="mt-2">Per favore, apri il file <strong>SitoCasa.html</strong> e inserisci l'URL e la Chiave Anon di Supabase nello script JavaScript per far funzionare il sito.</p>
+                <p class="mt-2">Troverai queste informazioni nella sezione <strong>Project Settings > API</strong> del tuo progetto Supabase.</p>
+            </div>
+        `;
+        return;
     }
 
-    createListingForm.addEventListener('click', function(e) {
-        if (e.target.classList.contains('next-step-btn')) {
-            currentStep++;
-            showStep(currentStep);
-        }
-        if (e.target.classList.contains('prev-step-btn')) {
-            currentStep--;
-            showStep(currentStep);
-        }
-    });
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // --- RIFERIMENTI AL DOM ---
+    const priceRange = document.getElementById('price');
+    const priceValue = document.getElementById('price-value');
+    const typeFilters = document.querySelectorAll('.filter-type');
+    const gridView = document.getElementById('grid-view');
+    const resultsCount = document.getElementById('results-count');
+    const modalContainer = document.getElementById('modal-container');
+    const navLinks = document.getElementById('nav-links');
+    const authBtn = document.getElementById('auth-btn');
+    const addListingBtn = document.getElementById('add-listing-btn');
+    const loadingSpinner = document.getElementById('loading-spinner');
     
-    // Preview delle foto caricate
-    const photoInput = document.getElementById('ad-photos');
-    const photoPreview = document.getElementById('photo-preview');
-    photoInput.addEventListener('change', function(e) {
-        photoPreview.innerHTML = ''; // Pulisce la preview
-        for (const file of e.target.files) {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const img = document.createElement('img');
-                img.src = event.target.result;
-                img.className = 'w-full h-32 object-cover rounded-md border';
-                photoPreview.appendChild(img);
+    let allListings = []; // Cache per tutti gli annunci caricati
+
+    // --- FUNZIONI DI NAVIGAZIONE E UI ---
+    
+    function switchView(viewId) {
+        document.querySelectorAll('main > div').forEach(view => view.classList.add('hidden'));
+        document.getElementById(viewId).classList.remove('hidden');
+
+        navLinks.querySelectorAll('a').forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === `#${viewId.split('-')[1]}`) {
+                link.classList.add('active');
             }
-            reader.readAsDataURL(file);
+        });
+
+        if (viewId === 'view-profile') renderProfile();
+        if (viewId === 'view-dashboard') renderChart(allListings);
+    }
+    
+    function closeModal() {
+        const modalContent = document.getElementById('modal-content');
+        if (modalContent) {
+            modalContent.classList.remove('modal-enter-active');
+            modalContent.classList.add('modal-exit-active');
+            setTimeout(() => { modalContainer.classList.add('hidden'); modalContainer.innerHTML = ''; }, 300);
         }
-    });
-
-    createListingForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        alert('Tentativo di pubblicare l\'annuncio!');
-        
-        const listingData = {
-            title: document.getElementById('ad-title').value,
-            description: document.getElementById('ad-description').value,
-            type: document.getElementById('ad-type').value,
-            price: parseInt(document.getElementById('ad-price').value),
-            features: {
-                wifi: document.getElementById('ad-wifi').checked,
-                lavatrice: document.getElementById('ad-washing').checked,
-                speseIncluse: document.getElementById('ad-bills').checked
-            },
-            // Altri dati come indirizzo, coordinate, etc.
-            // Le foto andrebbero caricate prima di salvare i dati
-        };
-
-        // Qui chiameresti la funzione per salvare su Firebase
-        await saveListingToFirebase(listingData); 
-    });
-    
-    // --- Funzioni di Interazione con Firebase (Simulate) ---
-
-    async function saveListingToFirebase(data) {
-        console.log("Dati da salvare:", data);
-        // Codice REALE con Firebase:
-        // try {
-        //   const docRef = await db.collection("listings").add(data);
-        //   console.log("Document written with ID: ", docRef.id);
-        //   alert("Annuncio pubblicato con successo!");
-        //   // Qui potresti reindirizzare alla dashboard del proprietario
-        // } catch (error) {
-        //   console.error("Error adding document: ", error);
-        //   alert("Errore nella pubblicazione dell'annuncio.");
-        // }
-        
-        // Simulazione per il prototipo
-        alert("Annuncio pubblicato con successo! (Simulazione)");
-        // Aggiungo l'annuncio ai dati locali per vederlo subito
-        const newListing = { ...data, id: Date.now(), images: ['https://placehold.co/600x400/16a34a/FFFFFF?text=Nuovo!'] };
-        listingsData.push(newListing);
-        renderListings(listingsData); // Aggiorno la vista studente
-        // Torno alla vista di ricerca per vedere il risultato
-        document.querySelector('a[href="#search"]').click();
     }
 
+    // --- FUNZIONI DI RENDERING ---
 
-    async function fetchListingsFromDB() {
-        console.log("Caricamento annunci dal database...");
-        // Codice REALE con Firebase:
-        // const querySnapshot = await db.collection("listings").get();
-        // const listings = [];
-        // querySnapshot.forEach((doc) => {
-        //   listings.push({ id: doc.id, ...doc.data() });
-        // });
-        // return listings;
-        
-        // Dati di Esempio per il prototipo (se il DB fosse vuoto)
-        return [
-            { id: 1, title: "Stanza Singola Vicino al Campus", price: 450, type: "Stanza Singola", images: ['https://placehold.co/600x400/3b82f6/FFFFFF?text=Stanza+1'] },
-            { id: 2, title: "Posto in Doppia Economico", price: 320, type: "Stanza Doppia", images: ['https://placehold.co/600x400/1e3a8a/FFFFFF?text=Stanza+2'] },
-            { id: 3, title: "Monolocale Indipendente", price: 600, type: "Monolocale", images: ['https://placehold.co/600x400/60a5fa/FFFFFF?text=Monolocale'] }
-        ];
-    }
-    
-    function renderListings(listings) {
-        const gridView = document.getElementById('grid-view');
-        gridView.innerHTML = '';
+    async function renderListings(listings) {
+        gridView.innerHTML = ''; // Pulisce la griglia prima di renderizzare
         if (listings.length === 0) {
-            gridView.innerHTML = `<p class="text-stone-500 col-span-full text-center">Nessun annuncio disponibile al momento.</p>`;
-            return;
+            gridView.innerHTML = `<p class="text-stone-500 col-span-full text-center">Nessun annuncio corrisponde ai criteri di ricerca.</p>`;
         }
+        
         listings.forEach(listing => {
             const card = document.createElement('div');
-            card.className = "bg-white rounded-xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300";
+            card.className = "bg-white rounded-xl shadow-lg overflow-hidden transform hover:-translate-y-1 transition-transform duration-300 cursor-pointer";
             card.innerHTML = `
-                <img src="${listing.images[0]}" alt="${listing.title}" class="w-full h-48 object-cover">
+                <img src="${listing.image_url || 'https://placehold.co/600x400/3b82f6/FFFFFF?text=Immagine'}" alt="${listing.title}" class="w-full h-48 object-cover">
                 <div class="p-4">
                     <p class="text-sm text-blue-600 font-semibold">${listing.type}</p>
                     <h3 class="text-lg font-bold text-stone-800 truncate mt-1">${listing.title}</h3>
                     <div class="flex justify-between items-center mt-4">
                         <p class="text-xl font-bold text-blue-700">€${listing.price}<span class="text-sm font-normal text-stone-500">/mese</span></p>
+                        <span class="text-sm text-white bg-stone-700 px-2 py-1 rounded-md">Vedi</span>
                     </div>
                 </div>
             `;
+            // Aggiungi un evento per aprire il modale con i dettagli
+            card.addEventListener('click', () => openListingModal(listing.id));
             gridView.appendChild(card);
         });
+        resultsCount.textContent = listings.length;
     }
 
-    // --- Inizializzazione dell'app ---
-    async function initializeApp() {
-        listingsData = await fetchListingsFromDB();
-        renderListings(listingsData);
+    function renderChart(listings) {
+        const chartEl = document.getElementById('typeDistributionChart');
+        if(!chartEl || !listings) return;
+        const ctx = chartEl.getContext('2d');
+        const typeCounts = listings.reduce((acc, curr) => { acc[curr.type] = (acc[curr.type] || 0) + 1; return acc; }, {});
+        
+        // Distruggi il grafico precedente se esiste per evitare sovrapposizioni
+        if (window.typeChart instanceof Chart) {
+            window.typeChart.destroy();
+        }
+
+        window.typeChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(typeCounts),
+                datasets: [{
+                    label: 'Numero di Annunci',
+                    data: Object.values(typeCounts),
+                    backgroundColor: ['rgba(59, 130, 246, 0.7)', 'rgba(30, 58, 138, 0.7)', 'rgba(96, 165, 250, 0.7)', 'rgba(147, 197, 253, 0.7)'],
+                    borderColor: ['rgb(59, 130, 246)', 'rgb(30, 58, 138)', 'rgb(96, 165, 250)', 'rgb(147, 197, 253)'],
+                    borderWidth: 1
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
+        });
+    }
+    
+    async function renderProfile() {
+        const { data: { user } } = await supabase.auth.getUser();
+        const profileContent = document.getElementById('profile-content');
+        if (!user) {
+            profileContent.innerHTML = `<p>Devi essere loggato per vedere il tuo profilo.</p>`;
+            return;
+        }
+
+        // Recupera i dati del profilo dalla tabella 'profiles'
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select(`full_name, avatar_url, course, nationality`)
+            .eq('id', user.id)
+            .single();
+
+        if (error) {
+            console.error('Errore nel recupero del profilo:', error);
+            profileContent.innerHTML = `<p>Impossibile caricare il profilo.</p>`;
+            return;
+        }
+        
+        profileContent.innerHTML = `
+            <div class="bg-white p-8 rounded-xl shadow-lg">
+                <div class="flex items-center mb-6">
+                    <img src="${profile.avatar_url || 'https://placehold.co/128x128/e0e7ff/4f46e5?text=AV'}" class="w-24 h-24 rounded-full mr-6 border-4 border-blue-200">
+                    <div>
+                        <h3 class="text-3xl font-bold">${profile.full_name || 'Nome Utente'}</h3>
+                        <p class="text-stone-500">${user.email}</p>
+                    </div>
+                </div>
+                <h4 class="text-xl font-bold mb-4">I miei annunci</h4>
+                <div id="user-listings">Caricamento annunci...</div>
+            </div>`;
+
+        // Carica gli annunci dell'utente
+        const { data: listings } = await supabase.from('listings').select('*').eq('user_id', user.id);
+        const userListingsContainer = document.getElementById('user-listings');
+        if (listings && listings.length > 0) {
+            userListingsContainer.innerHTML = listings.map(l => `<div class="p-4 border-b">${l.title} - €${l.price}</div>`).join('');
+        } else {
+            userListingsContainer.innerHTML = `<p class="text-stone-500">Non hai ancora pubblicato annunci.</p>`;
+        }
     }
 
-    initializeApp();
+
+    // --- FUNZIONI DATABASE (SUPABASE) ---
+
+    async function fetchAllListings() {
+        loadingSpinner.style.display = 'flex';
+        gridView.innerHTML = '';
+        
+        const { data, error } = await supabase
+            .from('listings')
+            .select('*'); // Seleziona tutti gli annunci
+
+        if (error) {
+            console.error('Errore nel caricamento degli annunci:', error);
+            gridView.innerHTML = `<p class="text-red-500 col-span-full text-center">Impossibile caricare gli annunci.</p>`;
+            loadingSpinner.style.display = 'none';
+            return;
+        }
+        
+        allListings = data;
+        loadingSpinner.style.display = 'none';
+        filterAndRender(); // Mostra i risultati iniziali
+        renderChart(allListings); // Aggiorna il grafico con i dati freschi
+    }
+
+    function filterAndRender() {
+        const priceLimit = parseInt(priceRange.value);
+        const selectedTypes = Array.from(typeFilters).filter(cb => cb.checked).map(cb => cb.value);
+        
+        const filteredListings = allListings.filter(listing => {
+            const priceMatch = listing.price <= priceLimit;
+            const typeMatch = selectedTypes.length === 0 || selectedTypes.includes(listing.type);
+            return priceMatch && typeMatch;
+        });
+        renderListings(filteredListings);
+    }
+    
+    // --- MODALI ---
+    
+    function openAuthModal() {
+        modalContainer.innerHTML = `
+            <div class="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-8 modal-enter" id="modal-content">
+                <h2 class="text-3xl font-bold text-center mb-2">PoliStanze</h2>
+                <p class="text-stone-500 text-center mb-6">Accedi o crea un nuovo account</p>
+                <div id="auth-error" class="hidden text-red-500 bg-red-100 p-3 rounded-md mb-4 text-sm"></div>
+                <form id="auth-form">
+                    <div class="mb-4">
+                        <label for="email" class="block text-md font-semibold mb-2 text-stone-700">Email</label>
+                        <input type="email" id="email" required class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="mb-6">
+                        <label for="password" class="block text-md font-semibold mb-2 text-stone-700">Password</label>
+                        <input type="password" id="password" required class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="flex flex-col space-y-3">
+                        <button type="submit" id="login-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition">Accedi</button>
+                        <button type="submit" id="signup-btn" class="w-full bg-stone-600 text-white font-bold py-3 rounded-lg hover:bg-stone-700 transition">Registrati</button>
+                    </div>
+                </form>
+            </div>`;
+        modalContainer.classList.remove('hidden');
+        setTimeout(() => { document.getElementById('modal-content').classList.add('modal-enter-active'); }, 10);
+        
+        const authForm = document.getElementById('auth-form');
+        const authErrorDiv = document.getElementById('auth-error');
+
+        document.getElementById('login-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = authForm.email.value;
+            const password = authForm.password.value;
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) {
+                authErrorDiv.textContent = error.message;
+                authErrorDiv.classList.remove('hidden');
+            } else {
+                closeModal();
+            }
+        });
+
+        document.getElementById('signup-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = authForm.email.value;
+            const password = authForm.password.value;
+            const { error } = await supabase.auth.signUp({ email, password });
+            if (error) {
+                authErrorDiv.textContent = error.message;
+                authErrorDiv.classList.remove('hidden');
+            } else {
+                authErrorDiv.textContent = "Controlla la tua email per il link di conferma!";
+                authErrorDiv.classList.replace('text-red-500', 'text-green-500');
+                authErrorDiv.classList.replace('bg-red-100', 'bg-green-100');
+                authErrorDiv.classList.remove('hidden');
+            }
+        });
+
+        modalContainer.addEventListener('click', (e) => { if (e.target === modalContainer) closeModal(); });
+    }
+    
+    async function openListingModal(listingId) {
+        // Recupera i dati dell'annuncio specifico dal DB
+        const { data: listing, error } = await supabase
+            .from('listings')
+            .select(`*, profiles(full_name, avatar_url)`) // JOIN con la tabella profiles per avere i dati del proprietario
+            .eq('id', listingId)
+            .single();
+
+        if (error) {
+            console.error('Errore nel recupero dell\'annuncio:', error);
+            return;
+        }
+
+        modalContainer.innerHTML = `
+            <div class="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative modal-enter" id="modal-content">
+                <button onclick="document.getElementById('modal-container').classList.add('hidden')" class="absolute top-4 right-4 text-stone-500 hover:text-stone-800 z-10"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-0">
+                    <div class="h-64 md:h-full"><img src="${listing.image_url || 'https://placehold.co/600x400'}" alt="${listing.title}" class="w-full h-full object-cover md:rounded-l-xl"></div>
+                    <div class="p-8 flex flex-col">
+                        <p class="text-sm text-blue-600 font-semibold">${listing.type}</p>
+                        <h2 class="text-3xl font-bold text-stone-800 mt-2">${listing.title}</h2>
+                        <p class="text-2xl font-bold text-blue-700 mt-4">€${listing.price} <span class="text-base font-normal text-stone-500">/ mese</span></p>
+                        <div class="mt-6 border-t pt-6"><h4 class="font-semibold text-lg mb-3">Descrizione</h4><p class="text-stone-600">${listing.description || 'Nessuna descrizione.'}</p></div>
+                        <div class="mt-6 border-t pt-6 flex items-center">
+                            <img src="${listing.profiles.avatar_url || 'https://placehold.co/64x64'}" class="w-12 h-12 rounded-full mr-4">
+                            <div>
+                                <p class="font-semibold">Pubblicato da</p>
+                                <p class="text-stone-600">${listing.profiles.full_name || 'Utente'}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        modalContainer.classList.remove('hidden');
+        setTimeout(() => { document.getElementById('modal-content').classList.add('modal-enter-active'); }, 10);
+        modalContainer.addEventListener('click', (e) => { if (e.target === modalContainer) closeModal(); });
+        document.querySelector('#modal-content button').addEventListener('click', closeModal);
+    }
+    
+    function openNewListingModal() {
+        modalContainer.innerHTML = `
+            <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 modal-enter" id="modal-content">
+                <h2 class="text-3xl font-bold mb-6">Crea Nuovo Annuncio</h2>
+                <div id="listing-error" class="hidden text-red-500 bg-red-100 p-3 rounded-md mb-4 text-sm"></div>
+                <form id="new-listing-form" class="space-y-4">
+                    <div>
+                        <label for="title" class="block text-md font-semibold mb-2">Titolo Annuncio</label>
+                        <input type="text" id="title" required class="w-full px-4 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label for="description" class="block text-md font-semibold mb-2">Descrizione</label>
+                        <textarea id="description" rows="4" class="w-full px-4 py-2 border rounded-lg"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="price" class="block text-md font-semibold mb-2">Prezzo (€/mese)</label>
+                            <input type="number" id="price" required class="w-full px-4 py-2 border rounded-lg">
+                        </div>
+                        <div>
+                            <label for="type" class="block text-md font-semibold mb-2">Tipologia</label>
+                            <select id="type" required class="w-full px-4 py-2 border rounded-lg bg-white">
+                                <option>Stanza Singola</option>
+                                <option>Stanza Doppia</option>
+                                <option>Monolocale</option>
+                                <option>Appartamento</option>
+                            </select>
+                        </div>
+                    </div>
+                     <div>
+                        <label for="image_url" class="block text-md font-semibold mb-2">URL Immagine</label>
+                        <input type="text" id="image_url" placeholder="https://..." class="w-full px-4 py-2 border rounded-lg">
+                    </div>
+                    <div class="pt-4 flex justify-end">
+                        <button type="button" onclick="document.getElementById('modal-container').classList.add('hidden')" class="mr-3 px-6 py-2 rounded-lg">Annulla</button>
+                        <button type="submit" class="bg-blue-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-blue-700">Pubblica Annuncio</button>
+                    </div>
+                </form>
+            </div>`;
+
+        modalContainer.classList.remove('hidden');
+        setTimeout(() => { document.getElementById('modal-content').classList.add('modal-enter-active'); }, 10);
+        
+        const listingForm = document.getElementById('new-listing-form');
+        listingForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                alert("Devi essere loggato per pubblicare un annuncio.");
+                return;
+            }
+
+            const newListing = {
+                user_id: user.id,
+                title: listingForm.title.value,
+                description: listingForm.description.value,
+                price: parseInt(listingForm.price.value),
+                type: listingForm.type.value,
+                image_url: listingForm.image_url.value,
+                // Puoi aggiungere coordinate fisse o un campo per l'indirizzo
+                lat: 45.8669, 
+                lng: 9.3997,
+            };
+            
+            const { error } = await supabase.from('listings').insert(newListing);
+            
+            if (error) {
+                document.getElementById('listing-error').textContent = error.message;
+                document.getElementById('listing-error').classList.remove('hidden');
+            } else {
+                closeModal();
+                fetchAllListings(); // Ricarica tutti gli annunci per mostrare quello nuovo
+            }
+        });
+
+        modalContainer.addEventListener('click', (e) => { if (e.target === modalContainer) closeModal(); });
+    }
+
+    // --- GESTIONE AUTENTICAZIONE E STATO UI ---
+    
+    async function updateAuthState() {
+        const { data: { session } } = await supabase.auth.getSession();
+        const loggedIn = session !== null;
+        
+        document.getElementById('profile-link').style.display = loggedIn ? 'inline-block' : 'none';
+        addListingBtn.style.display = loggedIn ? 'inline-block' : 'none';
+
+        if (loggedIn) {
+            authBtn.textContent = 'Logout';
+            authBtn.classList.replace('bg-blue-600', 'bg-red-600');
+            authBtn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
+        } else {
+            authBtn.textContent = 'Accedi';
+            authBtn.classList.replace('bg-red-600', 'bg-blue-600');
+            authBtn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+            // Se l'utente è sloggato e si trova in una pagina protetta, reindirizzalo
+            const currentView = document.querySelector('main > div:not(.hidden)').id;
+            if (currentView === 'view-profile') {
+                switchView('view-search');
+            }
+        }
+    }
+    
+    supabase.auth.onAuthStateChange((event, session) => {
+        updateAuthState();
+        // Se un utente si è appena loggato, possiamo recuperare il suo profilo
+        if (event === 'SIGNED_IN') {
+             // Potresti voler fare qualcosa qui, tipo caricare dati specifici dell'utente
+        }
+    });
+
+    // --- EVENT LISTENERS INIZIALI ---
+    
+    authBtn.addEventListener('click', async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            await supabase.auth.signOut();
+        } else {
+            openAuthModal();
+        }
+    });
+
+    addListingBtn.addEventListener('click', openNewListingModal);
+    
+    priceRange.addEventListener('input', (e) => {
+        priceValue.textContent = e.target.value === '1000' ? '1000+' : e.target.value;
+        filterAndRender();
+    });
+    typeFilters.forEach(cb => cb.addEventListener('change', filterAndRender));
+    
+    navLinks.addEventListener('click', (e) => {
+        if (e.target.tagName === 'A') {
+            e.preventDefault();
+            const viewName = e.target.getAttribute('href').substring(1);
+            switchView(`view-${viewName}`);
+        }
+    });
+
+    // --- INIZIALIZZAZIONE ---
+    
+    async function init() {
+        await updateAuthState();
+        switchView('view-search');
+        await fetchAllListings();
+    }
+    
+    init();
 });
 </script>
 
